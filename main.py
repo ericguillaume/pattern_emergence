@@ -16,7 +16,7 @@ class Animal:
     DEFAULT_ENERGY = 1.0
 
     def __init__(self, x, y, energy):
-        self.is_in_group = (random.randint(0, 1) == 0)
+        self.is_in_control_group = (random.randint(0, 1) == 0)
         self.gene = Gene()
         self.x = x
         self.y = y
@@ -107,17 +107,14 @@ class Universe:
         for new_ani in new_animals:
             self.animals.add(new_ani)
 
-        # energy = sum([ani.energy for ani in self.animals])
-        # return {"animals": len(self.animals), "energy": energy}
-
-        energy_group = sum([ani.energy for ani in self.animals if ani.is_in_group])
-        energy_notgroup = sum([ani.energy for ani in self.animals if not ani.is_in_group])
-        animals_group = len([ani for ani in self.animals if ani.is_in_group])
-        animals_notgroup = len([ani for ani in self.animals if not ani.is_in_group])
-        return {"animals_group": animals_group,
-                "animals_notgroup": animals_notgroup,
-                "energy_group": energy_group,
-                "energy_notgroup": energy_notgroup}
+        energy_control = sum([ani.energy for ani in self.animals if ani.is_in_control_group])
+        energy_test = sum([ani.energy for ani in self.animals if not ani.is_in_control_group])
+        animals_control = len([ani for ani in self.animals if ani.is_in_control_group])
+        animals_test = len([ani for ani in self.animals if not ani.is_in_control_group])
+        return {"animals_control": animals_control,
+                "animals_test": animals_test,
+                "energy_control": energy_control,
+                "energy_test": energy_test}
 
     def animals_walk_on_each_others(self):
         locations_animals_dict = self.build_locations_seq_animals_dict()
@@ -160,7 +157,7 @@ class Universe:
     def build_locations_animals_dict(self, filter_is_in_group=False):
         locations_animals_dict = {}
         for ani in self.animals:
-            if filter_is_in_group and not ani.is_in_group:
+            if filter_is_in_group and ani.is_in_control_group:
                 continue
             x, y = ani.get_coordinates()
             locations_animals_dict[(x, y)] = ani
@@ -196,7 +193,7 @@ for _ in tqdm(range(10000)):
 # analytics[["energy_per_animal"]].plot()
 # plt.show()
 
-analytics = pd.DataFrame(analytics, columns=["animals_group", "animals_notgroup", "energy_group", "energy_notgroup"])
-analytics["animals"] = analytics["animals_group"] + analytics["animals_notgroup"]
-analytics[["animals_group", "animals_notgroup", "animals"]].plot()
+analytics = pd.DataFrame(analytics, columns=["animals_control", "animals_test", "energy_control", "energy_test"])
+analytics["animals"] = analytics["animals_control"] + analytics["animals_test"]
+analytics[["animals_control", "animals_test", "animals"]].plot()
 plt.show()
