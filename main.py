@@ -36,8 +36,8 @@ class Gene:
 class Virus:
     ACTIVE_GENE_RANGE_A = 2.0
     ACTIVE_GENE_RANGE_LOC = 0.0
-    ACTIVE_GENE_RANGE_SCALE = 0.0001
-    KILLING_RATIO = 0.1
+    ACTIVE_GENE_RANGE_SCALE = 0.01
+    KILLING_RATIO = 0.01
 
     def __init__(self):
         self.gene_target = Gene.new_random_gene()
@@ -246,7 +246,7 @@ class Universe:
 
 uni = Universe()
 analytics = []
-for _ in tqdm(range(10000)):
+for _ in tqdm(range(20000)):
     row_analytics = uni.run_step()
     analytics.append(row_analytics)
 
@@ -262,4 +262,6 @@ analytics = pd.DataFrame(analytics, columns=["animals_control", "animals_test", 
                                              "ani_test_killed_by_virus"])
 analytics["animals"] = analytics["animals_control"] + analytics["animals_test"]
 analytics[["animals_control", "animals_test", "animals", "ani_test_killed_by_virus"]].plot()
+plt.show()
+analytics[["ani_test_killed_by_virus"]].plot()
 plt.show()
