@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 # todo(eric) add food instability
 # todo(eric) reproduce with random gene
+# groups seems to exterminate each  other too well already
 
 
 random.seed(8)
@@ -106,8 +107,8 @@ class Animal:
 
 
 class Universe:
-    ANIMALS = 6
-    SIZE = 12
+    ANIMALS = 100  # 6
+    SIZE = 20  # 12
     MOVE_SIZE = 2
     REPRODUCTION_MIN_ENERGY = 2.0
     ENERGY_CONSUMED_PER_STEP = 0.05
@@ -156,17 +157,19 @@ class Universe:
             self.animals.add(new_ani)
 
         # virus (control_group only)
-        ani_test_killed_by_virus = self.virus(filter_out_control_group=True)
+        ani_test_killed_by_virus, active_gene_range = self.virus(filter_out_control_group=True)  # UNDECIDED
 
         energy_control = sum([ani.energy for ani in self.animals if ani.is_in_control_group])
         energy_test = sum([ani.energy for ani in self.animals if not ani.is_in_control_group])
         animals_control = len([ani for ani in self.animals if ani.is_in_control_group])
         animals_test = len([ani for ani in self.animals if not ani.is_in_control_group])
+        genes = [ani.gene.value for ani in self.animals]
         return {"animals_control": animals_control,
                 "animals_test": animals_test,
                 "energy_control": energy_control,
                 "energy_test": energy_test,
-                "ani_test_killed_by_virus": ani_test_killed_by_virus}
+                "ani_test_killed_by_virus": ani_test_killed_by_virus,
+                "active_gene_range": active_gene_range}, genes
 
     def virus(self, filter_out_control_group):
         virus = Virus()
@@ -178,7 +181,7 @@ class Universe:
                 deads.append(ani)
         for dead in deads:
             self.animals.remove(dead)
-        return len(deads)
+        return len(deads), virus.active_gene_range
 
     def animals_walk_on_each_others(self):
         locations_animals_dict = self.build_locations_seq_animals_dict()
@@ -244,11 +247,18 @@ class Universe:
         return x, y
 
 
+STEPS = 50000
+GENES_HIST_DISPLAYED = 10
+
 uni = Universe()
 analytics = []
-for _ in tqdm(range(20000)):
-    row_analytics = uni.run_step()
+for idx, _ in enumerate(tqdm(range(STEPS))):
+    row_analytics, genes_values = uni.run_step()
     analytics.append(row_analytics)
+    if GENES_HIST_DISPLAYED > 0 and idx % int(STEPS / GENES_HIST_DISPLAYED) == 0:
+        plt.hist(genes_values, bins=100)
+        plt.title("Gene values")
+        plt.show()
 
 # analytics = pd.DataFrame(analytics, columns=["animals", "energy"])
 # analytics["energy_per_animal"] = analytics["energy"] / analytics["animals"]
@@ -259,9 +269,13 @@ for _ in tqdm(range(20000)):
 # plt.show()
 
 analytics = pd.DataFrame(analytics, columns=["animals_control", "animals_test", "energy_control", "energy_test",
-                                             "ani_test_killed_by_virus"])
+                                             "ani_test_killed_by_virus", "active_gene_range"])
 analytics["animals"] = analytics["animals_control"] + analytics["animals_test"]
 analytics[["animals_control", "animals_test", "animals", "ani_test_killed_by_virus"]].plot()
 plt.show()
+
 analytics[["ani_test_killed_by_virus"]].plot()
+plt.show()
+
+analytics[["active_gene_range"]].plot()
 plt.show()
