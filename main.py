@@ -1,30 +1,77 @@
 import random
-import pandas as pd
+
 import matplotlib.pyplot as plt
+import pandas as pd
+from scipy.stats import dgamma
 from tqdm import tqdm
+
+
+# todo(eric) add food instability
+# todo(eric) reproduce with random gene
+
 
 random.seed(8)
 
 
 class Gene:
+    REPRODUCTION_RANGE = 0.01
+
+    def __init__(self, value):
+        self.value = value
+
+    @staticmethod
+    def new_random_gene():
+        value = random.uniform(0.0, 1.0)
+        return Gene(value)
+
+    def reproduce(self):
+        """
+        :return: new gene
+        """
+        new_gene_value = self.value + random.uniform(-Gene.REPRODUCTION_RANGE, Gene.REPRODUCTION_RANGE)
+        new_gene_value = min(max(0, new_gene_value), 1)
+        return Gene(new_gene_value)
+
+
+class Virus:
+    ACTIVE_GENE_RANGE_A = 2.0
+    ACTIVE_GENE_RANGE_LOC = 0.0
+    ACTIVE_GENE_RANGE_SCALE = 0.0001
+    KILLING_RATIO = 0.1
 
     def __init__(self):
-        self.value = random.uniform(0.0, 1.0)
+        self.gene_target = Gene.new_random_gene()
+        self.active_gene_range = abs(float(dgamma.rvs(Virus.ACTIVE_GENE_RANGE_A,
+                                                      Virus.ACTIVE_GENE_RANGE_LOC,
+                                                      Virus.ACTIVE_GENE_RANGE_SCALE,
+                                                      size=1)[0]))
+
+    def is_active_on(self, gene):
+        min = self.gene_target.value - self.active_gene_range
+        max = self.gene_target.value + self.active_gene_range
+        return min < gene.value < max
+
+    def has_killed(self, gene):
+        if not self.is_active_on(gene):
+            return False
+        return random.uniform(0.0, 1.0) < Virus.KILLING_RATIO
 
 
 class Animal:
     DEFAULT_ENERGY = 1.0
 
-    def __init__(self, x, y, energy):
-        self.is_in_control_group = (random.randint(0, 1) == 0)
-        self.gene = Gene()
+    def __init__(self, x, y, energy, is_in_control_group, gene):
+        self.is_in_control_group = is_in_control_group
+        self.gene = gene
         self.x = x
         self.y = y
         self.energy = energy
 
     @staticmethod
-    def new_default_animal(x, y):
-        return Animal(x, y, Animal.DEFAULT_ENERGY)
+    def new_default_energy_animal(x, y):
+        is_in_control_group = (random.randint(0, 1) == 0)
+        gene = Gene.new_random_gene()
+        return Animal(x, y, Animal.DEFAULT_ENERGY, is_in_control_group, gene)
 
     def move(self, universe_size, move_size):
         new_x = self.x + random.randint(-move_size, move_size)
@@ -54,7 +101,8 @@ class Animal:
         :return: new animal
         '''
         self.energy /= 2
-        return Animal(self.x, self.y, self.energy).move(universe_size, 1)
+        return Animal(self.x, self.y, self.energy, self.is_in_control_group, self.gene.reproduce()) \
+            .move(universe_size, 1)
 
 
 class Universe:
@@ -74,8 +122,8 @@ class Universe:
         self.animals = set([self.new_random_animal() for _ in range(Universe.ANIMALS)])
 
     def run_step(self):
-        # help each others
-        self.animals_help_each_others()
+        # help each others (control_group only)
+        self.animals_help_each_others(filter_out_control_group=True)
 
         # walk on each others
         self.animals_walk_on_each_others()
@@ -107,6 +155,9 @@ class Universe:
         for new_ani in new_animals:
             self.animals.add(new_ani)
 
+        # virus (control_group only)
+        ani_test_killed_by_virus = self.virus(filter_out_control_group=True)
+
         energy_control = sum([ani.energy for ani in self.animals if ani.is_in_control_group])
         energy_test = sum([ani.energy for ani in self.animals if not ani.is_in_control_group])
         animals_control = len([ani for ani in self.animals if ani.is_in_control_group])
@@ -114,7 +165,20 @@ class Universe:
         return {"animals_control": animals_control,
                 "animals_test": animals_test,
                 "energy_control": energy_control,
-                "energy_test": energy_test}
+                "energy_test": energy_test,
+                "ani_test_killed_by_virus": ani_test_killed_by_virus}
+
+    def virus(self, filter_out_control_group):
+        virus = Virus()
+        deads = []
+        for ani in self.animals:
+            if filter_out_control_group and ani.is_in_control_group:
+                continue
+            if virus.has_killed(ani.gene):
+                deads.append(ani)
+        for dead in deads:
+            self.animals.remove(dead)
+        return len(deads)
 
     def animals_walk_on_each_others(self):
         locations_animals_dict = self.build_locations_seq_animals_dict()
@@ -133,11 +197,12 @@ class Universe:
             locations_animals_dict[x_y].append(ani)
         return locations_animals_dict
 
-    def animals_help_each_others(self):
+    def animals_help_each_others(self, filter_out_control_group):
         '''
         it doesn't manage 2 animals on the same location
         '''
-        locations_animals_dict = self.build_locations_animals_dict(filter_is_in_group=True)
+        locations_animals_dict = self.build_locations_animals_dict(
+            filter_out_control_group=filter_out_control_group)
         for (x, y), ani_receiver in locations_animals_dict.items():
             if ani_receiver.energy > 0.1:
                 continue
@@ -154,10 +219,10 @@ class Universe:
                         ani_giver.consume_energy(Universe.SOLIDARITY_GIFT + Universe.SOLIDARITY_COST)
                         ani_receiver.add_energy(Universe.SOLIDARITY_GIFT)
 
-    def build_locations_animals_dict(self, filter_is_in_group=False):
+    def build_locations_animals_dict(self, filter_out_control_group=False):
         locations_animals_dict = {}
         for ani in self.animals:
-            if filter_is_in_group and ani.is_in_control_group:
+            if filter_out_control_group and ani.is_in_control_group:
                 continue
             x, y = ani.get_coordinates()
             locations_animals_dict[(x, y)] = ani
@@ -170,7 +235,7 @@ class Universe:
     @staticmethod
     def new_random_animal():
         x, y = Universe.new_random_coordinates()
-        return Animal.new_default_animal(x, y)
+        return Animal.new_default_energy_animal(x, y)
 
     @staticmethod
     def new_random_coordinates():
@@ -193,7 +258,8 @@ for _ in tqdm(range(10000)):
 # analytics[["energy_per_animal"]].plot()
 # plt.show()
 
-analytics = pd.DataFrame(analytics, columns=["animals_control", "animals_test", "energy_control", "energy_test"])
+analytics = pd.DataFrame(analytics, columns=["animals_control", "animals_test", "energy_control", "energy_test",
+                                             "ani_test_killed_by_virus"])
 analytics["animals"] = analytics["animals_control"] + analytics["animals_test"]
-analytics[["animals_control", "animals_test", "animals"]].plot()
+analytics[["animals_control", "animals_test", "animals", "ani_test_killed_by_virus"]].plot()
 plt.show()
