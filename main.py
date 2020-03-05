@@ -2,21 +2,55 @@ import random
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from scipy.stats import dgamma
+from scipy.stats import dgamma, norm
 from tqdm import tqdm
 
 
 # todo(eric) add food instability
 # todo(eric) reproduce with random gene
 # groups seems to exterminate each  other too well already
+# @ punir un group trop present par virus !!! plus de chance pour eux de le choper
+# merge les cells en une seul (u on peut avoir jusqu a 10 animauxc etc..., plus simple)
 
+
+'''
+    new born should have same energy, maybe there is more
+    
+    reproduction with only 0.5 given to new baby increases diversity destruction,
+        maximiser energy n'y change rien, energie donner par food bien gausianniser n'y change rien  !!
+        
+    todo(eric) coder 10 animaux... ont tous chances de crever.. puis un est copier ave cchance... voir ce que ca donne
+    
+    todo(eric) coder premiers examples 2/3 iterations
+        
+        
+        
+        
+    SCENARIOS: size 20      
+
+    no viruses, IDENTICAL reproduction, 20 animals start, animals dont walk on each others 
+        => diversity kept (for 800 steps periods only)
+        
+    no viruses, IDENTICAL reproduction, 20 animals start, 10k steps
+        => diversity destroyed 
+        
+    no viruses, IDENTICAL reproduction, 20 animals start, no more SOLIDARITY, 10k steps
+        => diversity destroyed 
+        
+    no viruses, IDENTICAL reproduction, 20 animals start, no more SOLIDARITY, no more geographical BOUNDARIES,
+            10k steps
+        => diversity destroyed 
+    no viruses, IDENTICAL reproduction, 20 animals start, no more SOLIDARITY, no more geographical BOUNDARIES,
+            10k steps, reproduced next, no move move
+        => diversity destroyed , 400 animals, energy per animals 1.1 (same as before)
+        
+    10 familles de 200 membres => extinction ralentie
+'''
 
 random.seed(8)
 
 
 class Gene:
-    REPRODUCTION_RANGE = 0.01
-
     def __init__(self, value):
         self.value = value
 
@@ -25,41 +59,14 @@ class Gene:
         value = random.uniform(0.0, 1.0)
         return Gene(value)
 
-    def reproduce(self):
-        """
-        :return: new gene
-        """
-        new_gene_value = self.value + random.uniform(-Gene.REPRODUCTION_RANGE, Gene.REPRODUCTION_RANGE)
-        new_gene_value = min(max(0, new_gene_value), 1)
-        return Gene(new_gene_value)
-
-
-class Virus:
-    ACTIVE_GENE_RANGE_A = 2.0
-    ACTIVE_GENE_RANGE_LOC = 0.0
-    ACTIVE_GENE_RANGE_SCALE = 0.01
-    KILLING_RATIO = 0.01
-
-    def __init__(self):
-        self.gene_target = Gene.new_random_gene()
-        self.active_gene_range = abs(float(dgamma.rvs(Virus.ACTIVE_GENE_RANGE_A,
-                                                      Virus.ACTIVE_GENE_RANGE_LOC,
-                                                      Virus.ACTIVE_GENE_RANGE_SCALE,
-                                                      size=1)[0]))
-
-    def is_active_on(self, gene):
-        min = self.gene_target.value - self.active_gene_range
-        max = self.gene_target.value + self.active_gene_range
-        return min < gene.value < max
-
-    def has_killed(self, gene):
-        if not self.is_active_on(gene):
-            return False
-        return random.uniform(0.0, 1.0) < Virus.KILLING_RATIO
+    def reproduce_identical(self):
+        return Gene(self.value)
 
 
 class Animal:
     DEFAULT_ENERGY = 1.0
+    REPRODUCTION_ENERGY = DEFAULT_ENERGY / 3.0
+    MAX_ENERGY = DEFAULT_ENERGY * 2.0
 
     def __init__(self, x, y, energy, is_in_control_group, gene):
         self.is_in_control_group = is_in_control_group
@@ -70,16 +77,19 @@ class Animal:
 
     @staticmethod
     def new_default_energy_animal(x, y):
-        is_in_control_group = (random.randint(0, 1) == 0)
-        gene = Gene.new_random_gene()
+        gene_value = int(random.uniform(0.0, 10.0)) / 10.0
+        gene = Gene(gene_value)
+
+        # is_in_control_group = (random.randint(0, 1) == 0)
+        is_in_control_group = gene_value < 0.5
+        # gene_value = 0.0 if is_in_control_group else 1.0
+        # gene = Gene(gene_value)
+        # gene = Gene.new_random_gene()
         return Animal(x, y, Animal.DEFAULT_ENERGY, is_in_control_group, gene)
 
     def move(self, universe_size, move_size):
-        new_x = self.x + random.randint(-move_size, move_size)
-        new_y = self.y + random.randint(-move_size, move_size)
-
-        new_x = min(max(0, new_x), universe_size - 1)
-        new_y = min(max(0, new_y), universe_size - 1)
+        new_x = (self.x + random.randint(-move_size, move_size)) % universe_size
+        new_y = (self.y + random.randint(-move_size, move_size)) % universe_size
 
         self.x = new_x
         self.y = new_y
@@ -89,7 +99,7 @@ class Animal:
         return self.x, self.y
 
     def add_energy(self, amount):
-        self.energy += amount
+        self.energy = min(Animal.MAX_ENERGY, self.energy + amount)
 
     def consume_energy(self, amount):
         self.energy -= amount
@@ -101,30 +111,27 @@ class Animal:
         '''
         :return: new animal
         '''
-        self.energy /= 2
-        return Animal(self.x, self.y, self.energy, self.is_in_control_group, self.gene.reproduce()) \
-            .move(universe_size, 1)
+        self.consume_energy(Animal.REPRODUCTION_ENERGY)
+        return Animal(self.x, self.y, Animal.REPRODUCTION_ENERGY, self.is_in_control_group,
+                      self.gene.reproduce_identical()) \
+            .move(universe_size, 3)
 
 
 class Universe:
-    ANIMALS = 100  # 6
-    SIZE = 20  # 12
-    MOVE_SIZE = 2
-    REPRODUCTION_MIN_ENERGY = 2.0
+    ANIMALS = 2000  # 6
+    SIZE = 80  # 20  # 12
+    MOVE_SIZE = 2  # 2
+    REPRODUCTION_MIN_ENERGY = 1.5
     ENERGY_CONSUMED_PER_STEP = 0.05
     ENERGY_LOST_BY_WALKING_ONTO_EACH_OTHER = ENERGY_CONSUMED_PER_STEP
     POSITIVE_FOOD_INPUT = ENERGY_CONSUMED_PER_STEP / 5
-    SOLIDARITY_MIN_ENERGY_TO_HELP = 1.0
-    SOLIDARITY_LENGTH = 4
-    SOLIDARITY_GIFT = 0.1
-    SOLIDARITY_COST = ENERGY_CONSUMED_PER_STEP / 2
 
     def __init__(self):
         self.animals = set([self.new_random_animal() for _ in range(Universe.ANIMALS)])
 
     def run_step(self):
         # help each others (control_group only)
-        self.animals_help_each_others(filter_out_control_group=True)
+        # self.animals_help_each_others(filter_out_control_group=True)
 
         # walk on each others
         self.animals_walk_on_each_others()
@@ -156,9 +163,6 @@ class Universe:
         for new_ani in new_animals:
             self.animals.add(new_ani)
 
-        # virus (control_group only)
-        ani_test_killed_by_virus, active_gene_range = self.virus(filter_out_control_group=True)  # UNDECIDED
-
         energy_control = sum([ani.energy for ani in self.animals if ani.is_in_control_group])
         energy_test = sum([ani.energy for ani in self.animals if not ani.is_in_control_group])
         animals_control = len([ani for ani in self.animals if ani.is_in_control_group])
@@ -167,21 +171,7 @@ class Universe:
         return {"animals_control": animals_control,
                 "animals_test": animals_test,
                 "energy_control": energy_control,
-                "energy_test": energy_test,
-                "ani_test_killed_by_virus": ani_test_killed_by_virus,
-                "active_gene_range": active_gene_range}, genes
-
-    def virus(self, filter_out_control_group):
-        virus = Virus()
-        deads = []
-        for ani in self.animals:
-            if filter_out_control_group and ani.is_in_control_group:
-                continue
-            if virus.has_killed(ani.gene):
-                deads.append(ani)
-        for dead in deads:
-            self.animals.remove(dead)
-        return len(deads), virus.active_gene_range
+                "energy_test": energy_test}, genes
 
     def animals_walk_on_each_others(self):
         locations_animals_dict = self.build_locations_seq_animals_dict()
@@ -232,8 +222,13 @@ class Universe:
         return locations_animals_dict
 
     def get_food(self, x, y):
-        return random.uniform(Universe.POSITIVE_FOOD_INPUT,
-                              Universe.POSITIVE_FOOD_INPUT + 2 * Universe.ENERGY_CONSUMED_PER_STEP)
+        loc = Universe.POSITIVE_FOOD_INPUT + Universe.ENERGY_CONSUMED_PER_STEP
+        scale = Universe.ENERGY_CONSUMED_PER_STEP / 10.0
+        result = norm.rvs(loc=loc, scale=scale, size=1)[0]
+            # random.uniform(Universe.POSITIVE_FOOD_INPUT,
+            #                   Universe.POSITIVE_FOOD_INPUT + 2 * Universe.ENERGY_CONSUMED_PER_STEP)
+        result = loc
+        return max(result, 0.0)
 
     @staticmethod
     def new_random_animal():
@@ -247,8 +242,15 @@ class Universe:
         return x, y
 
 
-STEPS = 50000
-GENES_HIST_DISPLAYED = 10
+def display_hist_genes_values():
+    plt.hist(genes_values, bins=100)
+    plt.title("Gene values")
+    plt.show()
+
+
+STEPS = 10000
+GENES_HIST_DISPLAYED = 0  # 10
+GENES_HIST_DISPLAYED_AT_END = True
 
 uni = Universe()
 analytics = []
@@ -256,26 +258,18 @@ for idx, _ in enumerate(tqdm(range(STEPS))):
     row_analytics, genes_values = uni.run_step()
     analytics.append(row_analytics)
     if GENES_HIST_DISPLAYED > 0 and idx % int(STEPS / GENES_HIST_DISPLAYED) == 0:
-        plt.hist(genes_values, bins=100)
-        plt.title("Gene values")
-        plt.show()
+        display_hist_genes_values()
 
-# analytics = pd.DataFrame(analytics, columns=["animals", "energy"])
-# analytics["energy_per_animal"] = analytics["energy"] / analytics["animals"]
-#
-# analytics[["animals", "energy"]].plot()
-# plt.show()
-# analytics[["energy_per_animal"]].plot()
-# plt.show()
+if GENES_HIST_DISPLAYED_AT_END:
+    display_hist_genes_values()
 
-analytics = pd.DataFrame(analytics, columns=["animals_control", "animals_test", "energy_control", "energy_test",
-                                             "ani_test_killed_by_virus", "active_gene_range"])
+
+analytics = pd.DataFrame(analytics, columns=["animals_control", "animals_test", "energy_control", "energy_test"])
 analytics["animals"] = analytics["animals_control"] + analytics["animals_test"]
-analytics[["animals_control", "animals_test", "animals", "ani_test_killed_by_virus"]].plot()
+analytics[["animals_control", "animals_test", "animals"]].plot()
 plt.show()
 
-analytics[["ani_test_killed_by_virus"]].plot()
-plt.show()
-
-analytics[["active_gene_range"]].plot()
+analytics["energy"] = analytics["energy_control"] + analytics["energy_test"]
+analytics["energy_per_animal"] = analytics["energy"] / analytics["animals"]
+analytics[["energy_per_animal"]].plot()
 plt.show()
